@@ -66,6 +66,31 @@ async function chooseFixture(used=[]) {
   }
   throw Error('No suitable upcoming club fixtures were returned. Try again later.');
 }
+// Offline demonstration fixtures: invented pairings, not real scheduled matches.
+const demoClubs=['West Ham','Arsenal','Chelsea','Liverpool','Everton','Newcastle','Tottenham','Aston Villa','Manchester City','Brighton','Fulham','Crystal Palace'];
+function demoFixture(round){
+  const home=demoClubs[randomInt(demoClubs.length)];
+  const away=demoClubs.filter(x=>x!==home)[randomInt(demoClubs.length-1)];
+  const q=questions[randomInt(questions.length)];
+  const goalsHome=randomInt(5),goalsAway=randomInt(5);
+  const htHome=randomInt(goalsHome+1),htAway=randomInt(goalsAway+1);
+  const fixture={goals:{home:goalsHome,away:goalsAway},score:{halftime:{home:htHome,away:htAway}}};
+  const descriptor={questionId:q.id};
+  return {demo:true,home,away,league:'SIMULATED TEST MATCH',questionId:q.id,
+    title:q.label.replace('{home}',home).replace('{away}',away),
+    note:'TEST MODE — fictional fixture and simulated score',
+    demoScore:goalsHome+'–'+goalsAway, demoHalfTime:htHome+'–'+htAway,
+    demoResult:answerFor(descriptor,fixture),round};
+}
+async function autoDemoCheck(game){
+  if(game.status!=='Started'||!game.fixtureQuestion?.demo)return;
+  const alive=game.players.filter(p=>p.alive);
+  if(!alive.length||alive.some(p=>!game.picks[p.id]))return;
+  if(!game.allPicksAt){game.allPicksAt=Date.now();await save(game);return;}
+  if(Date.now()-game.allPicksAt<5000)return;
+  applyResult(game,game.fixtureQuestion.demoResult);
+  await save(game);
+}
 function answerFor(q,fixture){
   const h=fixture.goals?.home,a=fixture.goals?.away;
   if(!Number.isInteger(h)||!Number.isInteger(a)) return null;
@@ -166,7 +191,7 @@ export default async function handler(req) {
     if (action === 'start' && req.method === 'POST') {
       if (data.hostToken!==game.hostToken) return respond({error:'Only the host can start.'},403);
       if (game.status!=='Waiting') return respond({error:'Game already started.'},409);
-      game.fixtureQuestion=await chooseFixture(game.usedFixtures||[]);
+      game.fixtureQuestion=demoFixture(game.round);
       game.usedFixtures=[...(game.usedFixtures||[]),game.fixtureQuestion.fixtureId];
       game.status='Started';game.startedAt=Date.now();
       await save(game);
@@ -174,7 +199,7 @@ export default async function handler(req) {
     }
     if (action === 'pick' && req.method === 'POST') {
       if (game.status!=='Started') return respond({error:'Predictions are closed.'},409);
-      if(game.fixtureQuestion && Date.now()>=new Date(game.fixtureQuestion.kickoff).getTime())return respond({error:'Kickoff has passed. Predictions are closed.'},409);
+      if(game.fixtureQuestion?.kickoff && Date.now()>=new Date(game.fixtureQuestion.kickoff).getTime())return respond({error:'Kickoff has passed. Predictions are closed.'},409);
       const id=String(data.playerId||''),choice=data.choice;
       if (!['YES','NO'].includes(choice)) return respond({error:'Choose YES or NO.'},400);
       const player=game.players.find(p=>p.id===id);
@@ -182,6 +207,7 @@ export default async function handler(req) {
       if (!player.alive) return respond({error:'You have been eliminated.'},409);
       if (game.picks[id]) return respond({choice:game.picks[id].choice,locked:true});
       game.picks[id]={choice,lockedAt:Date.now()};
+      if(game.fixtureQuestion?.demo && game.players.filter(p=>p.alive).every(p=>game.picks[p.id]))game.allPicksAt=Date.now();
       await save(game);
       return respond({choice,locked:true});
     }
@@ -212,9 +238,9 @@ export default async function handler(req) {
     if (action === 'next' && req.method === 'POST') {
       if (data.hostToken!==game.hostToken) return respond({error:'Only the host can continue.'},403);
       if (game.status!=='Settled') return respond({error:'This round is not ready.'},409);
-      const nextQuestion=await chooseFixture(game.usedFixtures||[]);
+      const nextQuestion=demoFixture(game.round+1);
       game.usedFixtures=[...(game.usedFixtures||[]),nextQuestion.fixtureId];
-      game.fixtureQuestion=nextQuestion;game.fixtureStatus=null;game.lastFootballCheck=null;
+      game.fixtureQuestion=nextQuestion;game.fixtureStatus=null;game.lastFootballCheck=null;game.allPicksAt=null;
       game.status='Started';game.round++;game.result=null;game.picks={};
       await save(game);
       return respond({status:game.status,round:game.round});

@@ -76,11 +76,12 @@ async function join(){if(busy)return;const name=$('playerName').value.trim(),cod
 async function refresh(){if(!session||refreshInFlight||actionInFlight)return;refreshInFlight=true;const activeCode=session.code;try{const s=await api('state');if(!session||session.code!==activeCode)return;if(!pendingPick)message('');if(s.status==='Waiting'){display('lobby');$('code').textContent=s.code;$('host').textContent='Host: '+s.hostName;renderPlayers('lobbyPlayers',s.players,false);if(session.hostToken){show('start');hide('wait')}else{hide('start');show('wait')}return}
  display('game');
  $('fixtureQuestion').textContent=s.question?.title||'Fixture unavailable';
- $('fixtureDescription').textContent=(s.question?.league||'')+(s.question?.kickoff?' • '+new Date(s.question.kickoff).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'')+(s.fixtureStatus?' • '+s.fixtureStatus:'');
- $('fixtureBadges').classList.toggle('hidden',!s.question?.fixtureId);
- if(s.question?.fixtureId){
+ $('fixtureDescription').textContent=(s.question?.league||'')+(s.question?.kickoff?' • '+new Date(s.question.kickoff).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'')+(s.fixtureStatus?' • '+s.fixtureStatus:'')+(s.question?.demo?' • Results reveal automatically after all players lock their hunches.':'');
+ $('fixtureBadges').classList.toggle('hidden',!s.question?.fixtureId&&!s.question?.demo);
+ if(s.question?.fixtureId||s.question?.demo){
   $('homeClub').textContent=s.question.home;$('awayClub').textContent=s.question.away;
-  $('homeBadge').src=s.question.homeLogo;$('awayBadge').src=s.question.awayLogo;
+  $('homeBadge').style.display=s.question.demo?'none':'block';$('awayBadge').style.display=s.question.demo?'none':'block';
+  if(!s.question.demo){$('homeBadge').src=s.question.homeLogo;$('awayBadge').src=s.question.awayLogo;}
  }
  $('roundLabel').textContent='HUNCH '+s.round+' • MAKE YOUR PREDICTION';renderPlayers('gamePlayers',s.players,true);
  $('lifeStrip').textContent=!s.ownAlive?'💀 ELIMINATED':(s.ownMistakes>=1?'♡ LAST CHANCE — NEXT WRONG ANSWER ELIMINATES YOU':'❤️ ONE HEART — TWO WRONG ANSWERS AND YOU ARE OUT')+(s.ownShield?'  🛡️ SHIELD READY':'');
@@ -89,7 +90,7 @@ async function refresh(){if(!session||refreshInFlight||actionInFlight)return;ref
  const settled=s.status==='Settled'||s.status==='Finished';const kickoffPassed=s.question?.kickoff&&Date.now()>=new Date(s.question.kickoff).getTime();
  const eliminated=!s.ownAlive;const locked=!!s.ownPick;const shownPick=pendingPick||s.ownPick;for(const id of ['yes','no']){$(id).disabled=locked||settled||eliminated||!!pendingPick||!!kickoffPassed;$(id).classList.toggle('selected',shownPick===id.toUpperCase())}
  $('locked').classList.toggle('locked-banner',locked&&!settled);$('locked').textContent=eliminated?'You have been eliminated.':pendingPick?'Saving your '+pendingPick+' prediction…':locked?'HUNCH LOCKED — Your prediction: '+s.ownPick:kickoffPassed?'Kickoff passed — awaiting automatic result.':'Choose YES or NO to lock your hunch.';
- if(settled){show('outcome');$('correctAnswer').textContent='Correct answer: '+s.result;if(s.status==='Finished'){$('outcomeText').textContent=s.winner.length===1?'🏆 Winner: '+s.winner[0]:'Game over — no survivors';}else{$('outcomeText').textContent=s.ownAlive?(s.ownShield?'🛡️ SHIELD ACTIVE — YOU SURVIVED!':s.ownMistakes>=1?'♡ LAST CHANCE — STILL IN THE GAME':'✓ YOU SURVIVED!'):'✕ YOU ARE OUT';}}else hide('outcome');
+ if(settled){show('outcome');$('correctAnswer').textContent='Correct answer: '+s.result+(s.question?.demo?' • Simulated final score: '+s.question.demoScore+' (HT '+s.question.demoHalfTime+')':'');if(s.status==='Finished'){$('outcomeText').textContent=s.winner.length===1?'🏆 Winner: '+s.winner[0]:'Game over — no survivors';}else{$('outcomeText').textContent=s.ownAlive?(s.ownShield?'🛡️ SHIELD ACTIVE — YOU SURVIVED!':s.ownMistakes>=1?'♡ LAST CHANCE — STILL IN THE GAME':'✓ YOU SURVIVED!'):'✕ YOU ARE OUT';}}else hide('outcome');
  if(session.hostToken&&s.status==='Started'&&!s.automatic){show('settleControls')}else hide('settleControls');
  if(session.hostToken&&s.status==='Settled')show('nextControls');else hide('nextControls');
  if(s.round!==lastRound){lastRound=s.round;window.scrollTo(0,0)}
