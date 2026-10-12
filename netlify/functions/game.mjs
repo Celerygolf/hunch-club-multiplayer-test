@@ -14,21 +14,24 @@ const key = code => `game-${code}`;
 const load = code => store().get(key(code), {type:'json'});
 const save = game => store().setJSON(key(game.code), game);
 const question = {title:'Will there be a goal in the first half?', note:'Test question — not linked to a live match.'};
+const isShieldRound = round => round > 0 && round % 4 === 0; // Round 4, 8, ...
+const mistakes = p => Number.isInteger(p.mistakes) ? p.mistakes : (p.alive ? 0 : 2);
+const hasShield = p => !!p.shield;
 
 function publicState(game, playerId) {
   const finished = game.status === 'Finished';
   const settled = finished || game.status === 'Settled';
   const players = game.players.map(p => ({
-    id:p.id, name:p.name, alive:p.alive,
+    id:p.id, name:p.name, alive:p.alive, mistakes:mistakes(p), shield:hasShield(p),
     picked:!!game.picks?.[p.id],
     choice:settled ? (game.picks?.[p.id]?.choice ?? null) : null
   }));
   const own = game.players.find(p => p.id === playerId);
   return {
     code:game.code, hostName:game.hostName, status:game.status, round:game.round,
-    question, result:game.result ?? null, players,
+    question, shieldRound:isShieldRound(game.round), result:game.result ?? null, players,
     ownPick:game.picks?.[playerId]?.choice ?? null,
-    ownAlive:own?.alive ?? false,
+    ownAlive:own?.alive ?? false, ownMistakes:own ? mistakes(own) : 0, ownShield:own ? hasShield(own) : false,
     winner:finished ? game.players.filter(p=>p.alive).map(p=>p.name) : null
   };
 }
@@ -45,7 +48,7 @@ export default async function handler(req) {
       do {code=newCode()} while (await load(code));
       const playerId=randomUUID(),hostToken=randomUUID();
       const game={code,hostName:name,hostId:playerId,hostToken,status:'Waiting',round:1,
-        createdAt:Date.now(),players:[{id:playerId,name,alive:true,joinedAt:Date.now()}],picks:{},result:null};
+        createdAt:Date.now(),players:[{id:playerId,name,alive:true,mistakes:0,shield:false,joinedAt:Date.now()}],picks:{},result:null};
       await save(game);
       return respond({code,playerId,hostToken});
     }
@@ -61,7 +64,7 @@ export default async function handler(req) {
       const name=cleanName(data.name);
       if (!name) return respond({error:'Enter your name.'},400);
       const playerId=randomUUID();
-      game.players.push({id:playerId,name,alive:true,joinedAt:Date.now()});
+      game.players.push({id:playerId,name,alive:true,mistakes:0,shield:false,joinedAt:Date.now()});
       await save(game);
       return respond({code,playerId});
     }
@@ -90,7 +93,17 @@ export default async function handler(req) {
       if (!['YES','NO'].includes(data.result)) return respond({error:'Choose YES or NO.'},400);
       const alive=game.players.filter(p=>p.alive);
       if (alive.some(p=>!game.picks[p.id])) return respond({error:'Wait for every remaining player to lock a prediction.'},409);
-      for (const p of alive) p.alive=game.picks[p.id].choice===data.result;
+      for (const p of alive) {
+        const correct = game.picks[p.id].choice === data.result;
+        if (correct) {
+          if (isShieldRound(game.round)) p.shield = true;
+        } else if (p.shield) {
+          p.shield = false; // Shield absorbs one wrong prediction
+        } else {
+          p.mistakes = mistakes(p) + 1;
+          if (p.mistakes >= 2) p.alive = false;
+        }
+      }
       const survivors=alive.filter(p=>p.alive).length;
       game.status=survivors<=1?'Finished':'Settled';
       game.result=data.result;game.settledAt=Date.now();
