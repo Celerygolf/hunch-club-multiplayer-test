@@ -18,6 +18,100 @@ const isShieldRound = round => round > 0 && round % 4 === 0; // Round 4, 8, ...
 const mistakes = p => Number.isInteger(p.mistakes) ? p.mistakes : (p.alive ? 0 : 2);
 const hasShield = p => !!p.shield;
 
+
+// V7: all football requests happen server-side. Never expose the API key to browsers.
+const leagues=[39,40,140,135,78,61,2,3,45,48,179];
+const questions=[
+  {id:'homewin',label:'Will {home} win this match?'},
+  {id:'awaywin',label:'Will {away} win this match?'},
+  {id:'draw',label:'Will the match finish as a draw?'},
+  {id:'btts',label:'Will both teams score?'},
+  {id:'over25',label:'Will there be 3 or more goals?'},
+  {id:'homegoal',label:'Will {home} score at least one goal?'},
+  {id:'awaygoal',label:'Will {away} score at least one goal?'},
+  {id:'htdraw',label:'Will the teams be level at half-time?'}
+];
+async function football(path) {
+  const apiKey=process.env.API_FOOTBALL_KEY;
+  if(!apiKey) throw Error('API_FOOTBALL_KEY is missing in Netlify environment variables.');
+  const response=await fetch('https://v3.football.api-sports.io/'+path,{
+    headers:{'x-apisports-key':apiKey},signal:AbortSignal.timeout(12000)
+  });
+  if(!response.ok) throw Error('Football provider unavailable (HTTP '+response.status+').');
+  const json=await response.json();
+  if(json.errors && Object.keys(json.errors).length) throw Error('Football API: '+JSON.stringify(json.errors).slice(0,200));
+  return json.response||[];
+}
+const dateISO=ms=>new Date(ms).toISOString().slice(0,10);
+async function chooseFixture(used=[]) {
+  const now=Date.now();
+  // One league per attempt; at most three calls per new round to conserve free quota.
+  const offset=randomInt(leagues.length);
+  for(let i=0;i<3;i++){
+    const league=leagues[(offset+i)%leagues.length];
+    const season=new Date().getUTCFullYear();
+    const data=await football('fixtures?league='+league+'&season='+season+'&next=20');
+    const candidates=data.filter(x=>x.fixture?.timestamp*1000>now+15*60000 &&
+      x.fixture.timestamp*1000<now+14*86400000 &&
+      !used.includes(x.fixture.id) && x.teams?.home && x.teams?.away);
+    if(candidates.length){
+      const f=candidates[randomInt(candidates.length)];
+      const q=questions[randomInt(questions.length)];
+      return {fixtureId:f.fixture.id,home:f.teams.home.name,away:f.teams.away.name,
+        homeLogo:f.teams.home.logo,awayLogo:f.teams.away.logo,
+        league:f.league.name,kickoff:f.fixture.date,questionId:q.id,
+        title:q.label.replace('{home}',f.teams.home.name).replace('{away}',f.teams.away.name),
+        note:'Real fixture • Answers lock before kickoff'};
+    }
+  }
+  throw Error('No suitable upcoming club fixtures were returned. Try again later.');
+}
+function answerFor(q,fixture){
+  const h=fixture.goals?.home,a=fixture.goals?.away;
+  if(!Number.isInteger(h)||!Number.isInteger(a)) return null;
+  const half=fixture.score?.halftime;
+  const outcomes={
+    homewin:h>a,awaywin:a>h,draw:h===a,btts:h>0&&a>0,
+    over25:h+a>=3,homegoal:h>0,awaygoal:a>0,
+    htdraw:Number.isInteger(half?.home)&&Number.isInteger(half?.away)?half.home===half.away:null
+  };
+  const value=outcomes[q.questionId];
+  return value===null||value===undefined?null:value?'YES':'NO';
+}
+function applyResult(game,result) {
+  const alive=game.players.filter(p=>p.alive);
+  for(const p of alive){
+    const correct=game.picks[p.id]?.choice===result;
+    if(correct){if(isShieldRound(game.round))p.shield=true;}
+    else if(p.shield)p.shield=false;
+    else {p.mistakes=mistakes(p)+1;if(p.mistakes>=2)p.alive=false;}
+  }
+  const survivors=alive.filter(p=>p.alive).length;
+  game.status=survivors<=1?'Finished':'Settled';
+  game.result=result;game.settledAt=Date.now();
+  return survivors;
+}
+async function autoCheck(game){
+  if(game.status!=='Started'||!game.fixtureQuestion)return;
+  if(Date.now()<new Date(game.fixtureQuestion.kickoff).getTime()+90*60000)return;
+  // Avoid repeated provider calls while awaiting final score.
+  if(game.lastFootballCheck && Date.now()-game.lastFootballCheck<60*60000)return;
+  game.lastFootballCheck=Date.now();
+  const [f]=await football('fixtures?id='+game.fixtureQuestion.fixtureId);
+  if(!f){await save(game);return;}
+  const status=f.fixture?.status?.short;
+  if(['PST','CANC','ABD','AWD','WO'].includes(status)){
+    game.fixtureStatus='Match postponed/cancelled. No player will lose a life. Contact host to restart.';
+    await save(game);return;
+  }
+  if(!['FT','AET','PEN'].includes(status)){await save(game);return;}
+  const result=answerFor(game.fixtureQuestion,f);
+  if(!result){game.fixtureStatus='Final statistics not yet available.';await save(game);return;}
+  // Unlocked predictions at kickoff count as incorrect; do not block the round.
+  applyResult(game,result);
+  await save(game);
+}
+
 function publicState(game, playerId) {
   const finished = game.status === 'Finished';
   const settled = finished || game.status === 'Settled';
@@ -29,7 +123,7 @@ function publicState(game, playerId) {
   const own = game.players.find(p => p.id === playerId);
   return {
     code:game.code, hostName:game.hostName, status:game.status, round:game.round,
-    question, shieldRound:isShieldRound(game.round), result:game.result ?? null, players,
+    question:game.fixtureQuestion||question, fixtureStatus:game.fixtureStatus||null, automatic:!!game.fixtureQuestion, shieldRound:isShieldRound(game.round), result:game.result ?? null, players,
     ownPick:game.picks?.[playerId]?.choice ?? null,
     ownAlive:own?.alive ?? false, ownMistakes:own ? mistakes(own) : 0, ownShield:own ? hasShield(own) : false,
     winner:finished ? game.players.filter(p=>p.alive).map(p=>p.name) : null
@@ -57,6 +151,7 @@ export default async function handler(req) {
     const game=await load(code);
     if (!game) return respond({error:'Game code not found.'},404);
     if (action === 'state' && req.method === 'GET') {
+      try {await autoCheck(game);}catch(e){console.error('Football status check:',e.message);}
       return respond(publicState(game,url.searchParams.get('playerId')));
     }
     if (action === 'join' && req.method === 'POST') {
@@ -71,12 +166,15 @@ export default async function handler(req) {
     if (action === 'start' && req.method === 'POST') {
       if (data.hostToken!==game.hostToken) return respond({error:'Only the host can start.'},403);
       if (game.status!=='Waiting') return respond({error:'Game already started.'},409);
+      game.fixtureQuestion=await chooseFixture(game.usedFixtures||[]);
+      game.usedFixtures=[...(game.usedFixtures||[]),game.fixtureQuestion.fixtureId];
       game.status='Started';game.startedAt=Date.now();
       await save(game);
       return respond({status:game.status});
     }
     if (action === 'pick' && req.method === 'POST') {
       if (game.status!=='Started') return respond({error:'Predictions are closed.'},409);
+      if(game.fixtureQuestion && Date.now()>=new Date(game.fixtureQuestion.kickoff).getTime())return respond({error:'Kickoff has passed. Predictions are closed.'},409);
       const id=String(data.playerId||''),choice=data.choice;
       if (!['YES','NO'].includes(choice)) return respond({error:'Choose YES or NO.'},400);
       const player=game.players.find(p=>p.id===id);
@@ -89,6 +187,7 @@ export default async function handler(req) {
     }
     if (action === 'settle' && req.method === 'POST') {
       if (data.hostToken!==game.hostToken) return respond({error:'Only the host can settle.'},403);
+      if(game.fixtureQuestion)return respond({error:'Results are settled automatically for real fixtures.'},409);
       if (game.status!=='Started') return respond({error:'Game not ready to settle.'},409);
       if (!['YES','NO'].includes(data.result)) return respond({error:'Choose YES or NO.'},400);
       const alive=game.players.filter(p=>p.alive);
@@ -113,6 +212,9 @@ export default async function handler(req) {
     if (action === 'next' && req.method === 'POST') {
       if (data.hostToken!==game.hostToken) return respond({error:'Only the host can continue.'},403);
       if (game.status!=='Settled') return respond({error:'This round is not ready.'},409);
+      const nextQuestion=await chooseFixture(game.usedFixtures||[]);
+      game.usedFixtures=[...(game.usedFixtures||[]),nextQuestion.fixtureId];
+      game.fixtureQuestion=nextQuestion;game.fixtureStatus=null;game.lastFootballCheck=null;
       game.status='Started';game.round++;game.result=null;game.picks={};
       await save(game);
       return respond({status:game.status,round:game.round});
