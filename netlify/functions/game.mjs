@@ -112,7 +112,7 @@ function applyResult(game,result) {
     else {p.mistakes=mistakes(p)+1;if(p.mistakes>=2)p.alive=false;}
   }
   const survivors=alive.filter(p=>p.alive).length;
-  game.status=survivors<=1?'Finished':'Settled';
+  game.status=(game.fixtureQuestion?.demo && game.players.length===1)?'Settled':(survivors<=1?'Finished':'Settled');
   game.result=result;game.settledAt=Date.now();
   return survivors;
 }
@@ -176,7 +176,7 @@ export default async function handler(req) {
     const game=await load(code);
     if (!game) return respond({error:'Game code not found.'},404);
     if (action === 'state' && req.method === 'GET') {
-      try {await autoCheck(game);}catch(e){console.error('Football status check:',e.message);}
+      try {if(game.fixtureQuestion?.demo) await autoDemoCheck(game); else await autoCheck(game);}catch(e){console.error('Football status check:',e.message);}
       return respond(publicState(game,url.searchParams.get('playerId')));
     }
     if (action === 'join' && req.method === 'POST') {
