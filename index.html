@@ -152,6 +152,29 @@
 .app .card{background:linear-gradient(150deg,#172530 0%,#0a141d 65%,#060c12 100%);opacity:1}
 @media(max-width:512px){.artwork-header{height:91vw!important;margin-bottom:12px!important}}
 @media(min-width:513px){.artwork-header{height:450px!important}}
+
+/* V8.5: compact stadium header and tighter mobile game layout */
+.app{padding-top:12px!important}
+.artwork-header{height:clamp(255px,75vw,380px)!important;margin:-12px -14px 4px!important}
+@media(max-width:512px){.artwork-header{height:75vw!important;margin-bottom:3px!important}}
+@media(min-width:513px){.artwork-header{height:380px!important;margin-bottom:7px!important}}
+.app .card{margin:11px 0;border-radius:17px;box-shadow:0 12px 26px #000b,inset 0 1px #f4d18424}
+.app .card h2{margin:2px 0 12px}
+.lobby-title{margin:4px 0 7px}
+.lobby-instruction{margin:7px 0 9px}
+.code{margin:12px auto 10px;padding:12px 5px}
+.question-card{padding-top:17px;padding-bottom:18px}
+.question-card .round-eyebrow{margin:2px 0 8px}
+.life-strip{margin:10px 0 11px;padding:9px 10px}
+.fixture-badges{margin:13px 0 11px;padding:12px 7px}
+.question-wrap{margin:11px 0 9px;padding:15px 10px 13px}
+.question{margin:10px 0 2px}
+.entry-modal{padding:21px 21px 18px!important}
+.entry-modal h2{margin-bottom:11px!important;font-size:17px!important}
+.entry-modal p{margin:10px 0!important}
+.entry-modal .entry-label{margin:9px 0 6px}
+.entry-modal button{min-height:50px;margin:9px 0}
+@media(max-width:390px){.entry-modal{padding:18px 15px!important}.app .card{padding-left:14px;padding-right:14px}}
 </style></head><body>
 <section id="home"><main class="screen" aria-label="Hunch Club home screen"><button class="hotspot createSpot" onclick="openModal('create')" aria-label="Create a game">Create Game</button><button class="hotspot joinSpot" onclick="openModal('join')" aria-label="Join a game">Join Game</button><button class="nav a" onclick="openModal('info')" aria-label="How to play">How to Play</button><button class="nav b" onclick="openModal('categories')" aria-label="Categories">Categories</button><button class="nav c" onclick="openModal('friends')" aria-label="Friends">Friends</button><button class="nav d" onclick="openModal('settings')" aria-label="Settings">Settings</button></main>
 <div class="home-buttons"><button id="create">CREATE GAME</button><button id="join">JOIN GAME</button></div></section>
