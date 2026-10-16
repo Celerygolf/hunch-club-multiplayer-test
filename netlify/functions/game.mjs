@@ -68,15 +68,21 @@ async function chooseFixture(used=[]) {
 }
 // Host-selectable fixtures; limit calls to protect API quota.
 async function upcomingFixtures(){
- const now=Date.now(),all=[],errors=[];
- for(const league of [39,40]){
-  try{
-   const season=new Date().getUTCMonth()<6?new Date().getUTCFullYear()-1:new Date().getUTCFullYear();
-   const rows=await football('fixtures?league='+league+'&season='+season+'&next=30');
-   for(const f of rows){if(f.fixture?.timestamp*1000>now+15*60000 && f.fixture.timestamp*1000<now+14*86400000 && f.teams?.home && f.teams?.away)
-    all.push({id:f.fixture.id,home:f.teams.home.name,away:f.teams.away.name,homeLogo:f.teams.home.logo,awayLogo:f.teams.away.logo,league:f.league.name,kickoff:f.fixture.date});}
-  }catch(e){errors.push((league===39?'Premier League':'Championship')+': '+e.message);}
- }
+ const now=Date.now();
+ const season=new Date().getUTCMonth()<6?new Date().getUTCFullYear()-1:new Date().getUTCFullYear();
+ // Query leagues concurrently to avoid a pair of sequential 12-second waits exceeding Netlify limits.
+ const results=await Promise.allSettled([39,40].map(league=>football('fixtures?league='+league+'&season='+season+'&next=30')));
+ const all=[],errors=[];
+ results.forEach((result,i)=>{
+  const league=[39,40][i];
+  if(result.status==='rejected'){
+   errors.push((league===39?'Premier League':'Championship')+': '+String(result.reason?.message||result.reason));return;
+  }
+  for(const f of result.value){
+   if(f.fixture?.timestamp*1000>now+15*60000 && f.fixture.timestamp*1000<now+14*86400000 && f.teams?.home && f.teams?.away)
+    all.push({id:f.fixture.id,home:f.teams.home.name,away:f.teams.away.name,homeLogo:f.teams.home.logo,awayLogo:f.teams.away.logo,league:f.league.name,kickoff:f.fixture.date});
+  }
+ });
  if(!all.length&&errors.length)throw Error('Football API request failed. '+errors.join(' | '));
  return {fixtures:all.sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff)).slice(0,35),warning:errors.length?'Some leagues could not load: '+errors.join(' | '):''};
 }

@@ -225,7 +225,7 @@ let fixturesCache=[];let fixtureLoading=false;let fixtureMessage="";
 async function loadFixtures(){
  if(fixtureLoading)return;
  fixtureLoading=true;const b=$('loadFixtures');b.disabled=true;
- fixtureMessage='Loading upcoming fixtures…';$('fixtureSetupStatus').textContent=fixtureMessage;
+ fixtureMessage='Loading upcoming fixtures… this may take a few seconds.';$('fixtureSetupStatus').textContent=fixtureMessage;
  try{
   const r=await api('fixtures');fixturesCache=r.fixtures||[];
   const fixtureOptions=fixturesCache.map(f=>new Option(f.league+' • '+f.home+' v '+f.away+' • '+new Date(f.kickoff).toLocaleString('en-GB'),String(f.id)));
@@ -290,6 +290,6 @@ function cancelLeave(){$('leaveOverlay').classList.remove('visible')}
 function commitLeave(){cancelLeave();$('pickOverlay').classList.remove('visible');$('settleOverlay').classList.remove('visible');session=null;pendingPick=null;selectedForConfirmation=null;selectedSettleResult=null;localStorage.removeItem('hunchClubNetlifyV4');display('home');message('')}
 $('leave').onclick=()=>{$('leaveOverlay').classList.add('visible')};
 try{session=JSON.parse(localStorage.getItem('hunchClubNetlifyV4')||'null');if(session?.code&&session?.playerId)refresh();else session=null}catch{session=null}
-setInterval(()=>{const focused=document.activeElement;const editingFixture=focused&&$('fixtureSetup').contains(focused)&&['SELECT','BUTTON'].includes(focused.tagName);if(session&&!busy&&!actionInFlight&&!pendingPick&&!fixtureLoading&&!editingFixture)refresh()},4000);
+setInterval(()=>{const focused=document.activeElement;const editingFixture=focused&&$('fixtureSetup').contains(focused)&&['SELECT','BUTTON'].includes(focused.tagName);if(session&&!busy&&!actionInFlight&&!pendingPick&&!fixtureLoading&&!editingFixture&&!(session.hostToken&&$('gameMode').value==='real'&&!$('lobby').classList.contains('hidden')))refresh()},4000);
 
 </script></body></html>
