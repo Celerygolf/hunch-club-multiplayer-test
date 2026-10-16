@@ -68,14 +68,17 @@ async function chooseFixture(used=[]) {
 }
 // Host-selectable fixtures; limit calls to protect API quota.
 async function upcomingFixtures(){
- const now=Date.now(), all=[];
+ const now=Date.now(),all=[],errors=[];
  for(const league of [39,40]){
-  const season=new Date().getUTCMonth()<6?new Date().getUTCFullYear()-1:new Date().getUTCFullYear();
-  const rows=await football('fixtures?league='+league+'&season='+season+'&next=30');
-  for(const f of rows){if(f.fixture?.timestamp*1000>now+15*60000 && f.fixture.timestamp*1000<now+14*86400000 && f.teams?.home && f.teams?.away)
-   all.push({id:f.fixture.id,home:f.teams.home.name,away:f.teams.away.name,homeLogo:f.teams.home.logo,awayLogo:f.teams.away.logo,league:f.league.name,kickoff:f.fixture.date});}
+  try{
+   const season=new Date().getUTCMonth()<6?new Date().getUTCFullYear()-1:new Date().getUTCFullYear();
+   const rows=await football('fixtures?league='+league+'&season='+season+'&next=30');
+   for(const f of rows){if(f.fixture?.timestamp*1000>now+15*60000 && f.fixture.timestamp*1000<now+14*86400000 && f.teams?.home && f.teams?.away)
+    all.push({id:f.fixture.id,home:f.teams.home.name,away:f.teams.away.name,homeLogo:f.teams.home.logo,awayLogo:f.teams.away.logo,league:f.league.name,kickoff:f.fixture.date});}
+  }catch(e){errors.push((league===39?'Premier League':'Championship')+': '+e.message);}
  }
- return all.sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff)).slice(0,35);
+ if(!all.length&&errors.length)throw Error('Football API request failed. '+errors.join(' | '));
+ return {fixtures:all.sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff)).slice(0,35),warning:errors.length?'Some leagues could not load: '+errors.join(' | '):''};
 }
 function makeQuestion(f,id){const q=questions.find(x=>x.id===id);if(!q)throw Error('Invalid prediction.');return {fixtureId:f.id,home:f.home,away:f.away,homeLogo:f.homeLogo,awayLogo:f.awayLogo,league:f.league,kickoff:f.kickoff,questionId:q.id,title:q.label.replace('{home}',f.home).replace('{away}',f.away),note:'Real match • Predictions lock at kickoff'};}
 const dailyKey=()=>`daily-${dateISO(Date.now())}`;
@@ -174,7 +177,7 @@ export default async function handler(req) {
     const action = url.searchParams.get('action');
     const data = req.method === 'POST' ? await req.json().catch(()=>({})) : {};
     if(action==='fixtures' && req.method==='GET'){
-      const fixtures=await upcomingFixtures();return respond({fixtures,questions:questions.map(q=>({id:q.id,label:q.label}))});
+      const result=await upcomingFixtures();return respond({...result,questions:questions.map(q=>({id:q.id,label:q.label}))});
     }
     if(action==='daily' && req.method==='POST'){
       const name=cleanName(data.name);if(!name)return respond({error:'Enter your name.'},400);
@@ -221,7 +224,7 @@ export default async function handler(req) {
       if(game.status!=='Waiting')return respond({error:'Game already started.'},409);
       if(data.mode==='demo'){game.mode='demo';game.selectedQuestion=null;}
       else{
-        const fixtures=await upcomingFixtures();const f=fixtures.find(x=>String(x.id)===String(data.fixtureId));
+        const {fixtures}=await upcomingFixtures();const f=fixtures.find(x=>String(x.id)===String(data.fixtureId));
         if(!f)return respond({error:'Fixture no longer available. Refresh the fixture list.'},409);
         game.mode='real';game.selectedQuestion=makeQuestion(f,data.questionId);
       }
