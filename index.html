@@ -138,6 +138,12 @@
 /* V8.2: preserve the entire artwork slogan above game cards */
 .artwork-header{height:clamp(350px,76vw,405px);margin-bottom:14px}
 @media(max-width:512px){.artwork-header{height:74vw;min-height:0;margin-bottom:12px}}
+
+/* V8.3: visually mask the small subtitle baked into the stadium artwork.
+   Keep the gold LAST ONE STANDING headline and leave game logic untouched. */
+.artwork-header{position:relative;height:clamp(380px,82vw,450px);margin-bottom:0}
+.artwork-header:after{content:"";position:absolute;left:-20px;right:-20px;bottom:0;height:clamp(48px,11vw,66px);background:linear-gradient(180deg,transparent 0%,#071018 72%,#071018 100%);pointer-events:none}
+@media(max-width:512px){.artwork-header{height:82vw;margin-bottom:0}.artwork-header:after{height:12vw}}
 </style></head><body>
 <section id="home"><main class="screen" aria-label="Hunch Club home screen"><button class="hotspot createSpot" onclick="openModal('create')" aria-label="Create a game">Create Game</button><button class="hotspot joinSpot" onclick="openModal('join')" aria-label="Join a game">Join Game</button><button class="nav a" onclick="openModal('info')" aria-label="How to play">How to Play</button><button class="nav b" onclick="openModal('categories')" aria-label="Categories">Categories</button><button class="nav c" onclick="openModal('friends')" aria-label="Friends">Friends</button><button class="nav d" onclick="openModal('settings')" aria-label="Settings">Settings</button></main>
 <div class="home-buttons"><button id="create">CREATE GAME</button><button id="join">JOIN GAME</button></div></section>
