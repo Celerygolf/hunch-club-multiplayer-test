@@ -49,7 +49,7 @@ async function chooseFixture(used=[]) {
   const offset=randomInt(leagues.length);
   for(let i=0;i<3;i++){
     const league=leagues[(offset+i)%leagues.length];
-    const season=new Date().getUTCFullYear();
+    const season=new Date().getUTCMonth()<6?new Date().getUTCFullYear()-1:new Date().getUTCFullYear();
     const data=await football('fixtures?league='+league+'&season='+season+'&next=20');
     const candidates=data.filter(x=>x.fixture?.timestamp*1000>now+15*60000 &&
       x.fixture.timestamp*1000<now+14*86400000 &&
@@ -66,6 +66,19 @@ async function chooseFixture(used=[]) {
   }
   throw Error('No suitable upcoming club fixtures were returned. Try again later.');
 }
+// Host-selectable fixtures; limit calls to protect API quota.
+async function upcomingFixtures(){
+ const now=Date.now(), all=[];
+ for(const league of [39,40]){
+  const season=new Date().getUTCMonth()<6?new Date().getUTCFullYear()-1:new Date().getUTCFullYear();
+  const rows=await football('fixtures?league='+league+'&season='+season+'&next=30');
+  for(const f of rows){if(f.fixture?.timestamp*1000>now+15*60000 && f.fixture.timestamp*1000<now+14*86400000 && f.teams?.home && f.teams?.away)
+   all.push({id:f.fixture.id,home:f.teams.home.name,away:f.teams.away.name,homeLogo:f.teams.home.logo,awayLogo:f.teams.away.logo,league:f.league.name,kickoff:f.fixture.date});}
+ }
+ return all.sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff)).slice(0,35);
+}
+function makeQuestion(f,id){const q=questions.find(x=>x.id===id);if(!q)throw Error('Invalid prediction.');return {fixtureId:f.id,home:f.home,away:f.away,homeLogo:f.homeLogo,awayLogo:f.awayLogo,league:f.league,kickoff:f.kickoff,questionId:q.id,title:q.label.replace('{home}',f.home).replace('{away}',f.away),note:'Real match • Predictions lock at kickoff'};}
+const dailyKey=()=>`daily-${dateISO(Date.now())}`;
 // Offline demonstration fixtures: invented pairings, not real scheduled matches.
 const demoClubs=['West Ham','Arsenal','Chelsea','Liverpool','Everton','Newcastle','Tottenham','Aston Villa','Manchester City','Brighton','Fulham','Crystal Palace'];
 function demoFixture(round){
@@ -147,7 +160,7 @@ function publicState(game, playerId) {
   }));
   const own = game.players.find(p => p.id === playerId);
   return {
-    code:game.code, hostName:game.hostName, status:game.status, round:game.round,
+    code:game.code, hostName:game.hostName, mode:game.mode||'demo', selectedQuestion:game.status==='Waiting'?game.selectedQuestion:null, status:game.status, round:game.round,
     question:game.fixtureQuestion||question, fixtureStatus:game.fixtureStatus||null, automatic:!!game.fixtureQuestion, shieldRound:isShieldRound(game.round), result:game.result ?? null, players,
     ownPick:game.picks?.[playerId]?.choice ?? null,
     ownAlive:own?.alive ?? false, ownMistakes:own ? mistakes(own) : 0, ownShield:own ? hasShield(own) : false,
@@ -160,6 +173,21 @@ export default async function handler(req) {
     const url = new URL(req.url);
     const action = url.searchParams.get('action');
     const data = req.method === 'POST' ? await req.json().catch(()=>({})) : {};
+    if(action==='fixtures' && req.method==='GET'){
+      const fixtures=await upcomingFixtures();return respond({fixtures,questions:questions.map(q=>({id:q.id,label:q.label}))});
+    }
+    if(action==='daily' && req.method==='POST'){
+      const name=cleanName(data.name);if(!name)return respond({error:'Enter your name.'},400);
+      const ds=store();let daily=await ds.get(dailyKey(),{type:'json'});
+      if(!daily){
+        const fixture=await chooseFixture();
+        let code;do{code=newCode()}while(await load(code));
+        daily={code,hostName:'Hunch Club',hostId:'daily',hostToken:randomUUID(),mode:'daily',status:'Started',round:1,createdAt:Date.now(),startedAt:Date.now(),players:[],picks:{},result:null,fixtureQuestion:fixture};
+        await save(daily);await ds.setJSON(dailyKey(),{code});
+      }else{daily=await load(daily.code);if(!daily)return respond({error:'Daily game unavailable. Please try again.'},503);}
+      const playerId=randomUUID();daily.players.push({id:playerId,name,alive:true,mistakes:0,shield:false,joinedAt:Date.now()});await save(daily);
+      return respond({code:daily.code,playerId});
+    }
     if (action === 'create' && req.method === 'POST') {
       const name = cleanName(data.name);
       if (!name) return respond({error:'Enter your name.'},400);
@@ -167,7 +195,7 @@ export default async function handler(req) {
       do {code=newCode()} while (await load(code));
       const playerId=randomUUID(),hostToken=randomUUID();
       const game={code,hostName:name,hostId:playerId,hostToken,status:'Waiting',round:1,
-        createdAt:Date.now(),players:[{id:playerId,name,alive:true,mistakes:0,shield:false,joinedAt:Date.now()}],picks:{},result:null};
+        mode:data.mode==='real'?'real':'demo',createdAt:Date.now(),players:[{id:playerId,name,alive:true,mistakes:0,shield:false,joinedAt:Date.now()}],picks:{},result:null};
       await save(game);
       return respond({code,playerId,hostToken});
     }
@@ -188,10 +216,21 @@ export default async function handler(req) {
       await save(game);
       return respond({code,playerId});
     }
+    if(action==='configure' && req.method==='POST'){
+      if(data.hostToken!==game.hostToken)return respond({error:'Only the host can select fixtures.'},403);
+      if(game.status!=='Waiting')return respond({error:'Game already started.'},409);
+      if(data.mode==='demo'){game.mode='demo';game.selectedQuestion=null;}
+      else{
+        const fixtures=await upcomingFixtures();const f=fixtures.find(x=>String(x.id)===String(data.fixtureId));
+        if(!f)return respond({error:'Fixture no longer available. Refresh the fixture list.'},409);
+        game.mode='real';game.selectedQuestion=makeQuestion(f,data.questionId);
+      }
+      await save(game);return respond({ok:true});
+    }
     if (action === 'start' && req.method === 'POST') {
       if (data.hostToken!==game.hostToken) return respond({error:'Only the host can start.'},403);
       if (game.status!=='Waiting') return respond({error:'Game already started.'},409);
-      game.fixtureQuestion=demoFixture(game.round);
+      game.fixtureQuestion=game.mode==='real'?game.selectedQuestion:demoFixture(game.round);
       game.usedFixtures=[...(game.usedFixtures||[]),game.fixtureQuestion.fixtureId];
       game.status='Started';game.startedAt=Date.now();
       await save(game);
@@ -238,7 +277,7 @@ export default async function handler(req) {
     if (action === 'next' && req.method === 'POST') {
       if (data.hostToken!==game.hostToken) return respond({error:'Only the host can continue.'},403);
       if (game.status!=='Settled') return respond({error:'This round is not ready.'},409);
-      const nextQuestion=demoFixture(game.round+1);
+      const nextQuestion=game.mode==='real'?await chooseFixture(game.usedFixtures||[]):demoFixture(game.round+1);
       game.usedFixtures=[...(game.usedFixtures||[]),nextQuestion.fixtureId];
       game.fixtureQuestion=nextQuestion;game.fixtureStatus=null;game.lastFootballCheck=null;game.allPicksAt=null;
       game.status='Started';game.round++;game.result=null;game.picks={};
