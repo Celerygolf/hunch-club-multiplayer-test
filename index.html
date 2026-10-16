@@ -135,6 +135,9 @@
 #overlay.visible{align-items:flex-start;overflow-y:auto;justify-content:center;background:#0007;padding-top:20px;padding-bottom:36px}
 #overlay .entry-modal h2{margin-top:2px}
 @media(max-width:390px){.artwork-header{height:56vw;min-height:245px;margin:-16px -10px 8px}.entry-modal{margin-top:32vw}}
+/* V8.2: preserve the entire artwork slogan above game cards */
+.artwork-header{height:clamp(350px,76vw,405px);margin-bottom:14px}
+@media(max-width:512px){.artwork-header{height:74vw;min-height:0;margin-bottom:12px}}
 </style></head><body>
 <section id="home"><main class="screen" aria-label="Hunch Club home screen"><button class="hotspot createSpot" onclick="openModal('create')" aria-label="Create a game">Create Game</button><button class="hotspot joinSpot" onclick="openModal('join')" aria-label="Join a game">Join Game</button><button class="nav a" onclick="openModal('info')" aria-label="How to play">How to Play</button><button class="nav b" onclick="openModal('categories')" aria-label="Categories">Categories</button><button class="nav c" onclick="openModal('friends')" aria-label="Friends">Friends</button><button class="nav d" onclick="openModal('settings')" aria-label="Settings">Settings</button></main>
 <div class="home-buttons"><button id="create">CREATE GAME</button><button id="join">JOIN GAME</button></div></section>
