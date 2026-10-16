@@ -144,6 +144,14 @@
 .artwork-header{position:relative;height:clamp(380px,82vw,450px);margin-bottom:0}
 .artwork-header:after{content:"";position:absolute;left:-20px;right:-20px;bottom:0;height:clamp(48px,11vw,66px);background:linear-gradient(180deg,transparent 0%,#071018 72%,#071018 100%);pointer-events:none}
 @media(max-width:512px){.artwork-header{height:82vw;margin-bottom:0}.artwork-header:after{height:12vw}}
+
+/* V8.4: Dedicated clean game artwork; the original home artwork remains untouched. */
+.app{background:#04080c url('game-header.png') center top/100% auto no-repeat!important}
+.artwork-header{height:clamp(360px,92vw,485px)!important;margin:-16px -14px 12px!important;position:relative}
+.artwork-header:after{display:none!important}
+.app .card{background:linear-gradient(150deg,#172530 0%,#0a141d 65%,#060c12 100%);opacity:1}
+@media(max-width:512px){.artwork-header{height:91vw!important;margin-bottom:12px!important}}
+@media(min-width:513px){.artwork-header{height:450px!important}}
 </style></head><body>
 <section id="home"><main class="screen" aria-label="Hunch Club home screen"><button class="hotspot createSpot" onclick="openModal('create')" aria-label="Create a game">Create Game</button><button class="hotspot joinSpot" onclick="openModal('join')" aria-label="Join a game">Join Game</button><button class="nav a" onclick="openModal('info')" aria-label="How to play">How to Play</button><button class="nav b" onclick="openModal('categories')" aria-label="Categories">Categories</button><button class="nav c" onclick="openModal('friends')" aria-label="Friends">Friends</button><button class="nav d" onclick="openModal('settings')" aria-label="Settings">Settings</button></main>
 <div class="home-buttons"><button id="create">CREATE GAME</button><button id="join">JOIN GAME</button></div></section>
